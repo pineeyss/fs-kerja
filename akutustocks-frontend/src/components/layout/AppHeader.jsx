@@ -4,7 +4,6 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { ROLE_LABEL } from "@/lib/constants";
 import { APP_ROUTES } from "@/lib/navigation";
 import { formatDateLong } from "@/lib/utils";
-import WarehouseFilter from "./WarehouseFilter";
 import { useNavBadges } from "./useNavBadges";
 
 export default function AppHeader({ onMenu }) {
@@ -31,7 +30,6 @@ export default function AppHeader({ onMenu }) {
       </div>
 
       <div className="ml-auto flex items-center gap-2 sm:gap-5">
-        <WarehouseFilter />
         <Link
           to="/notifikasi"
           aria-label={unread > 0 ? `Notifikasi, ${unread} belum dibaca` : "Notifikasi"}
@@ -44,14 +42,20 @@ export default function AppHeader({ onMenu }) {
             </span>
           )}
         </Link>
-        <div className="flex items-center gap-3 border-l border-line pl-3 sm:pl-5">
-          <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-sm font-semibold text-white">
-            {initial}
-          </span>
-          <div className="hidden leading-tight md:block">
-            <p className="max-w-44 truncate font-display text-[15px] font-semibold">{user.name}</p>
-            <p className="text-xs text-ink-muted">{ROLE_LABEL[user.role]}</p>
-          </div>
+        <div className="border-l border-line pl-3 sm:pl-5">
+          <Link
+            to="/profil"
+            aria-label={`Buka menu profil ${user.name}`}
+            className="flex items-center gap-3 rounded-xl py-1 pr-2 transition-colors hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full bg-primary text-sm font-semibold text-white">
+              {initial}
+            </span>
+            <div className="hidden leading-tight md:block">
+              <p className="max-w-44 truncate font-display text-[15px] font-semibold text-ink">{user.name}</p>
+              <p className="text-xs text-ink-muted">{ROLE_LABEL[user.role]}</p>
+            </div>
+          </Link>
         </div>
       </div>
     </header>

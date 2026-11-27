@@ -21,8 +21,12 @@ function Panel({ title, to, cta, children }) {
   return (
     <section className="rounded-card bg-surface p-6 shadow-card">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-display text-lg font-semibold"><span className="h-5 w-1 rounded-full bg-primary" aria-hidden="true" /> {title}</h2>
-        <Link to={to} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">{cta} <ArrowRight className="size-4" aria-hidden="true" /></Link>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
+          <span className="h-5 w-1 rounded-full bg-primary" aria-hidden="true" /> {title}
+        </h2>
+        <Link to={to} className="inline-flex items-center gap-1 text-sm font-semibold text-primary">
+          {cta} <ArrowRight className="size-4" aria-hidden="true" />
+        </Link>
       </div>
       {children}
     </section>
@@ -45,45 +49,112 @@ export default function SpvDashboard() {
   return (
     <>
       <section className="mb-5 rounded-card bg-surface p-6 shadow-card sm:p-8">
-        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold"><span className="rounded-full bg-primary/10 px-3 py-1 text-primary">SUPERVISOR</span><StatusBadge tone="warning">Data contoh</StatusBadge></div>
-        <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight text-primary">{hour < 11 ? "Selamat Pagi" : hour < 15 ? "Selamat Siang" : hour < 18 ? "Selamat Sore" : "Selamat Malam"}, {user.name}</h1>
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span className="rounded-full bg-primary/10 px-3 py-1 text-primary">SUPERVISOR</span>
+          <StatusBadge tone="warning">Data contoh</StatusBadge>
+        </div>
+        <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight text-primary">
+          {hour < 11 ? "Selamat Pagi" : hour < 15 ? "Selamat Siang" : hour < 18 ? "Selamat Sore" : "Selamat Malam"}, {user.name}
+        </h1>
         <p className="mt-2 max-w-2xl text-ink-muted">Periksa aktivitas Staff, tindak lanjuti selisih stok, dan pantau hasil import Kasir Pintar.</p>
       </section>
 
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Menunggu Validasi" value={queue.data?.meta.total ?? "—"} unit="Laporan" icon={Hourglass} tone="warning" footer={<Link to="/aktivitas-staff" className="text-xs font-semibold text-primary underline">Buka antrean</Link>} />
-        <StatCard label="Selisih Terbuka" value={open.data?.meta.total ?? "—"} unit="Kasus" icon={FileWarning} tone="danger" caption={`${prog.data?.meta.total ?? 0} kasus dalam proses`} footer={<Link to="/selisih" className="text-xs font-semibold text-primary underline">Monitoring selisih</Link>} />
-        <StatCard label="Stok Kritis & Menipis" value={low} unit="Item" icon={TriangleAlert} tone="warning" footer={<Link to="/barang" className="text-xs font-semibold text-primary underline">Data barang</Link>} />
-        <StatCard label="Import Terakhir" value={last ? timeAgo(last.created_at) : "—"} icon={FileUp} tone="info" caption={last ? `${last.filename} · ${last.mismatch_count} selisih` : "Belum ada import"} footer={<Link to="/import" className="text-xs font-semibold text-primary underline">Import Kasir Pintar</Link>} />
+      {/* 2 kartu di atas, 2 kartu di bawah */}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <StatCard
+          label="Menunggu Validasi"
+          value={queue.data?.meta.total ?? "—"}
+          unit="Laporan"
+          icon={Hourglass}
+          tone="warning"
+          footer={
+            <Link to="/aktivitas-staff" className="text-xs font-semibold text-primary underline">
+              Buka antrean
+            </Link>
+          }
+        />
+        <StatCard
+          label="Selisih Terbuka"
+          value={open.data?.meta.total ?? "—"}
+          unit="Kasus"
+          icon={FileWarning}
+          tone="danger"
+          caption={`${prog.data?.meta.total ?? 0} kasus dalam proses`}
+          footer={
+            <Link to="/barang/selisih" className="text-xs font-semibold text-primary underline">
+              Monitoring selisih
+            </Link>
+          }
+        />
+        <StatCard
+          label="Stok Kritis & Menipis"
+          value={low}
+          unit="Item"
+          icon={TriangleAlert}
+          tone="warning"
+          footer={
+            <Link to="/barang" className="text-xs font-semibold text-primary underline">
+              Data barang
+            </Link>
+          }
+        />
+        <StatCard
+          label="Import Terakhir"
+          value={last ? timeAgo(last.created_at) : "—"}
+          icon={FileUp}
+          tone="info"
+          caption={last ? `${last.filename} · ${last.mismatch_count} selisih` : "Belum ada import"}
+          footer={
+            <Link to="/import" className="text-xs font-semibold text-primary underline">
+              Import Kasir Pintar
+            </Link>
+          }
+        />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         <Panel title="Antrean Validasi" to="/aktivitas-staff" cta="Lihat semua">
-          {queue.data?.data.length === 0 ? <EmptyState title="Tidak ada laporan menunggu" description="Semua aktivitas Staff sudah diperiksa." /> : (
+          {queue.data?.data.length === 0 ? (
+            <EmptyState title="Tidak ada laporan menunggu" description="Semua aktivitas Staff sudah diperiksa." />
+          ) : (
             <ul className="divide-y divide-line">
               {(queue.data?.data ?? []).map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold text-primary">{activityCode(c.id)}</span><ActivityTypeBadge type={c.items[0].activity_type} /></p>
+                    <p className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-primary">{activityCode(c.id)}</span>
+                      <ActivityTypeBadge type={c.items[0].activity_type} />
+                    </p>
                     <p className="mt-1 truncate text-sm font-medium">{c.items[0].product.name}</p>
-                    <p className="text-xs text-ink-muted">{c.user.name} · {fmtDateTime(c.created_at)}</p>
+                    <p className="text-xs text-ink-muted">
+                      {c.user.name} · {fmtDateTime(c.created_at)}
+                    </p>
                   </div>
-                  <Link to="/aktivitas-staff" className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">Tinjau</Link>
+                  <Link to="/aktivitas-staff" className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark">
+                    Tinjau
+                  </Link>
                 </li>
               ))}
             </ul>
           )}
         </Panel>
-        <Panel title="Selisih Terbaru" to="/selisih" cta="Lihat semua">
-          {open.data?.data.length === 0 ? <EmptyState title="Tidak ada selisih terbuka" description="Selisih baru muncul dari import atau stok opname." /> : (
+
+        <Panel title="Selisih Terbaru" to="/barang/selisih" cta="Lihat semua">
+          {open.data?.data.length === 0 ? (
+            <EmptyState title="Tidak ada selisih terbuka" description="Selisih baru muncul dari import atau stok opname." />
+          ) : (
             <ul className="divide-y divide-line">
               {(open.data?.data ?? []).map((d) => (
                 <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{d.product.name}</p>
-                    <p className="text-xs text-ink-muted">{d.warehouse ? d.warehouse.name : "Total"} · {DISCREPANCY_SOURCE[d.source]} · {timeAgo(d.created_at)}</p>
+                    <p className="text-xs text-ink-muted">
+                      {d.warehouse ? d.warehouse.name : "Total"} · {DISCREPANCY_SOURCE[d.source]} · {timeAgo(d.created_at)}
+                    </p>
                   </div>
-                  <b className={d.difference < 0 ? "tabular-nums text-danger-ink" : "tabular-nums text-warning-ink"}>{signed(d.difference)} unit</b>
+                  <b className={d.difference < 0 ? "tabular-nums text-danger-ink" : "tabular-nums text-warning-ink"}>
+                    {signed(d.difference)} unit
+                  </b>
                 </li>
               ))}
             </ul>

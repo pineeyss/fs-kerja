@@ -20,7 +20,7 @@ import { parseDelimited } from "@/lib/csvParse";
  *     kecocokan nama/kategori hanya berstatus CANDIDATE dan WAJIB dikonfirmasi SPV (FR-19).
  *   POST /imports/:id/confirm { mappings: [{ row, product_id }] } -> data: { batch, discrepancies_created, discrepancies_updated }
  *     Menyimpan batch + item + kasus selisih. TIDAK mengubah stok sistem (PRD aturan 9).
- *   GET  /imports?page&limit -> data: [{ id, filename, uploaded_by, total_rows, matched_count, mismatch_count, not_found_count, created_at }], meta
+ *   GET  /imports?page&limit -> data: [{ id, filename, uploaded_by, total_rows, matched_count, mismatch_count, not_found_count, created_at, items? }], meta
  * Selisih = stok pembanding (Kasir Pintar) - stok sistem. Tanpa kolom gudang, perbandingan di tingkat TOTAL (PRD aturan 10).
  */
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -99,11 +99,24 @@ export async function confirmImport(importId, mappings = {}) {
     if (!s) return mockFail(404, "NOT_FOUND", "Hasil pratinjau sudah kedaluwarsa. Unggah ulang file.");
     const me = mockCurrentUser();
     let same = 0, diff = 0, nf = 0, created = 0, updated = 0;
+    const resolvedItems = [];
+
     for (const it of s.items) {
-      let { status, product, system_qty } = it;
+      let { status, product, system_qty, difference, issue } = it;
+      let confirmed = false;
       if (status === "CANDIDATE") {
         const c = it.candidates.find((x) => x.product.id === mappings[it.row]);
-        if (c) { product = c.product; system_qty = c.system_qty; status = it.qty === system_qty ? "SAME" : "DIFFERENT"; } else status = "UNMATCHED";
+        if (c) {
+          product = c.product;
+          system_qty = c.system_qty;
+          difference = it.qty !== null ? it.qty - system_qty : null;
+          status = difference === 0 ? "SAME" : "DIFFERENT";
+          confirmed = true;
+          issue = "";
+        } else {
+          status = "UNMATCHED";
+          issue = issue || "Kandidat belum dikonfirmasi.";
+        }
       }
       if (status === "SAME") same++;
       else if (status === "DIFFERENT") {
@@ -111,8 +124,29 @@ export async function confirmImport(importId, mappings = {}) {
         const r = upsertCase({ product, warehouse: it.scope, source: "KASIR_PINTAR", sys: system_qty, cmp: it.qty });
         r.created ? created++ : updated++;
       } else nf++;
+
+      resolvedItems.push({
+        ...it,
+        product,
+        system_qty,
+        difference,
+        status,
+        confirmed,
+        issue,
+      });
     }
-    const batch = { id: importId, filename: s.filename, uploaded_by: me?.name ?? "SPV", total_rows: s.items.length, matched_count: same, mismatch_count: diff, not_found_count: nf, created_at: new Date().toISOString() };
+
+    const batch = {
+      id: importId,
+      filename: s.filename,
+      uploaded_by: me?.name ?? "SPV",
+      total_rows: s.items.length,
+      matched_count: same,
+      mismatch_count: diff,
+      not_found_count: nf,
+      created_at: new Date().toISOString(),
+      items: resolvedItems,
+    };
     importsDb.unshift(batch);
     stash.delete(importId);
     if (diff) notificationsDb.spv.unshift({ id: `n-${Date.now()}`, type: "DISCREPANCY_NEW", message: `Hasil import ${s.filename} menghasilkan ${diff} kasus selisih.`, ref_id: importId, is_read: false, created_at: new Date().toISOString() });
@@ -129,5 +163,5 @@ export async function listImports({ page = 1, limit = 5 } = {}) {
     return { data: res.data, meta: res.meta };
   }
   const res = await api.get("/imports", { params: { page, limit } });
-  return { data: res.data.data, meta: res.data.meta };
+  return { data: res.data.data, meta: res.meta };
 }

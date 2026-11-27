@@ -11,7 +11,6 @@ import ProfilePage from "@/features/profile/ProfilePage";
 import ReportsPage from "@/features/reports/ReportsPage";
 import StockCatalogPage from "@/features/stock/StockCatalogPage";
 import TransactionPage from "@/features/transactions/TransactionPage";
-import OpnamePage from "@/features/opname/OpnamePage";
 import StatusReportPage from "@/features/status/StatusReportPage";
 import NotificationsPage from "@/features/notifications/NotificationsPage";
 import ActivityValidationPage from "@/features/activities/ActivityValidationPage";
@@ -21,29 +20,22 @@ import PlaceholderPage from "@/pages/PlaceholderPage";
 import { ForbiddenPage, NotFoundPage } from "@/pages/StatusPages";
 import { APP_ROUTES } from "@/lib/navigation";
 
-/*
- * Daftar halaman nyata. Saat sebuah fitur selesai, daftarkan di sini;
- * route yang belum ada otomatis memakai PlaceholderPage.
- */
 const PAGES = {
   dashboard: <DashboardRouter />,
   akun: <UsersPage />,
   barang: <ProductsPage />,
+  "barang/selisih": <DiscrepanciesPage />,
   riwayat: <HistoryPage />,
   laporan: <ReportsPage />,
   "manajemen-stok": <StockCatalogPage />,
   transaksi: <TransactionPage />,
-  opname: <OpnamePage />,
   "status-pelaporan": <StatusReportPage />,
   notifikasi: <NotificationsPage />,
   "aktivitas-staff": <ActivityValidationPage />,
-  selisih: <DiscrepanciesPage />,
   import: <ImportPage />,
-  pencarian: <StockCatalogPage />,
   profil: <ProfilePage />,
 };
 
-// Satu guard per kombinasi role agar guard role dijalankan sebelum layout dirender
 const appRoutes = APP_ROUTES.map((r) => ({
   element: <ProtectedRoute roles={r.roles} />,
   children: [{ path: r.path, element: PAGES[r.path] ?? <PlaceholderPage title={r.label} /> }],
@@ -58,7 +50,12 @@ export const router = createBrowserRouter([
     children: [
       {
         element: <AppLayout />,
-        children: [{ index: true, element: <Navigate to="/dashboard" replace /> }, ...appRoutes],
+        children: [
+          { index: true, element: <Navigate to="/dashboard" replace /> },
+          { path: "selisih", element: <Navigate to="/barang/selisih" replace /> },
+          { path: "pencarian", element: <Navigate to="/barang" replace /> },
+          ...appRoutes,
+        ],
       },
     ],
   },

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Download, Package, PlusCircle, Search, Pencil, Trash2, Store } from "lucide-react";
+import { Download, Package, PlusCircle, Search, Pencil, Trash2, Store, AlertTriangle } from "lucide-react";
 import PageHeader from "@/components/common/PageHeader";
 import StatCard from "@/components/common/StatCard";
 import StatusBadge from "@/components/common/StatusBadge";
@@ -13,6 +14,7 @@ import { LoadingState, ErrorState } from "@/components/common/states";
 import Button from "@/components/ui/Button";
 import Select from "@/components/ui/Select";
 import { useWarehouse } from "@/app/providers/WarehouseContext";
+import { useAuth } from "@/features/auth/AuthContext";
 import { downloadCsv } from "@/lib/csv";
 import { summarizeProduct } from "@/lib/stock";
 import { cn, formatNumber } from "@/lib/utils";
@@ -22,11 +24,54 @@ import ProductFormDrawer from "./ProductFormDrawer";
 import ProductDetailDrawer from "./ProductDetailDrawer";
 
 const PAGE_SIZE = 8;
-const fmtDate = (iso) => (iso ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—");
+const fmtDate = (iso) =>
+  iso ? new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—";
+
+const activeBtnCls = "bg-primary text-white shadow-card";
+const inactiveBtnCls = "border border-line bg-surface text-ink-muted hover:bg-canvas hover:text-ink";
+
+export function CatalogSubNav() {
+  const { pathname } = useLocation();
+  const { user } = useAuth();
+  if (user?.role !== "spv" && user?.role !== "owner") return null;
+
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  const isSelisihActive =
+    normalizedPath === "/barang/selisih" ||
+    normalizedPath.startsWith("/barang/selisih/") ||
+    normalizedPath === "/selisih" ||
+    normalizedPath.startsWith("/selisih/");
+  const isBarangActive = normalizedPath === "/barang";
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2" role="navigation" aria-label="Halaman Manajemen Data Barang">
+      <NavLink
+        to="/barang"
+        className={cn(
+          "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
+          isBarangActive ? activeBtnCls : inactiveBtnCls
+        )}
+      >
+        <Package className="size-4" aria-hidden="true" />
+        Data Barang
+      </NavLink>
+      <NavLink
+        to="/barang/selisih"
+        className={cn(
+          "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
+          isSelisihActive ? activeBtnCls : inactiveBtnCls
+        )}
+      >
+        <AlertTriangle className="size-4" aria-hidden="true" />
+        Monitoring Selisih
+      </NavLink>
+    </div>
+  );
+}
 
 export default function ProductsPage() {
   const qc = useQueryClient();
-  const { warehouseId, warehouses } = useWarehouse();
+  const { warehouseId, setWarehouseId, warehouses } = useWarehouse();
   const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["products"], queryFn: productsApi.listProducts });
 
   const [query, setQuery] = useState("");
@@ -40,6 +85,24 @@ export default function ProductsPage() {
 
   const products = useMemo(() => (data ?? []).map(summarizeProduct), [data]);
   const categories = useMemo(() => [...new Set(products.map((p) => p.category).filter(Boolean))].sort(), [products]);
+
+  const warehouseCounts = useMemo(() => {
+    const counts = { all: products.length };
+    for (const w of warehouses) {
+      counts[w.id] = products.filter((p) => (p.byWarehouse[w.id] ?? 0) > 0).length;
+    }
+    return counts;
+  }, [products, warehouses]);
+
+  const visibleWarehouses = useMemo(() => {
+    if (warehouseId === "all") return warehouses;
+    return warehouses.filter((w) => String(w.id) === String(warehouseId));
+  }, [warehouses, warehouseId]);
+
+  const selectedWarehouse = useMemo(
+    () => warehouses.find((w) => String(w.id) === String(warehouseId)) ?? null,
+    [warehouses, warehouseId]
+  );
 
   const stats = useMemo(
     () => ({
@@ -66,7 +129,19 @@ export default function ProductsPage() {
   const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const from = filtered.length ? (safePage - 1) * PAGE_SIZE + 1 : 0;
   const to = Math.min(safePage * PAGE_SIZE, filtered.length);
-  const resetPage = (fn) => (e) => { fn(e.target.value); setPage(1); };
+  const resetPage = (fn) => (e) => {
+    fn(e.target.value);
+    setPage(1);
+  };
+
+  const hasActiveFilter = warehouseId !== "all" || query.trim() !== "" || category !== "all" || status !== "all";
+  const resetAllFilters = () => {
+    setWarehouseId("all");
+    setQuery("");
+    setCategory("all");
+    setStatus("all");
+    setPage(1);
+  };
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["products"] });
 
@@ -82,13 +157,23 @@ export default function ProductsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (p) => productsApi.deleteProduct(p.id),
-    onSuccess: () => { toast.success("Barang dinonaktifkan. Riwayat stoknya tetap tersimpan."); invalidate(); },
+    onSuccess: () => {
+      toast.success("Barang dinonaktifkan. Riwayat stoknya tetap tersimpan.");
+      invalidate();
+    },
     onError: (err) => toast.error(getErrorMessage(err)),
     onSettled: () => setToDelete(null),
   });
 
-  const openCreate = () => { setEditing(null); setFormOpen(true); };
-  const openEdit = (p) => { setEditing(p); setDetail(null); setFormOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setFormOpen(true);
+  };
+  const openEdit = (p) => {
+    setEditing(p);
+    setDetail(null);
+    setFormOpen(true);
+  };
 
   const iconBtn = "grid size-9 place-items-center rounded-lg text-ink-muted hover:bg-canvas hover:text-ink";
 
@@ -98,7 +183,12 @@ export default function ProductsPage() {
       header: "Produk",
       className: "min-w-52",
       cell: (p) => (
-        <button type="button" onClick={() => setDetail(p)} className="flex items-center gap-3 text-left hover:text-primary" aria-label={`Lihat detail ${p.name}`}>
+        <button
+          type="button"
+          onClick={() => setDetail(p)}
+          className="flex items-center gap-3 text-left hover:text-primary"
+          aria-label={`Lihat detail ${p.name}`}
+        >
           {p.image_url ? (
             <img src={p.image_url} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
           ) : (
@@ -110,14 +200,22 @@ export default function ProductsPage() {
         </button>
       ),
     },
-    { key: "code", header: "Kode SKU", cell: (p) => <span className="whitespace-nowrap rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{p.code}</span> },
+    {
+      key: "code",
+      header: "Kode SKU",
+      cell: (p) => (
+        <span className="whitespace-nowrap rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{p.code}</span>
+      ),
+    },
     { key: "category", header: "Kategori" },
-    ...warehouses.map((w) => ({
+    ...visibleWarehouses.map((w) => ({
       key: `wh-${w.id}`,
       header: w.code,
       align: "right",
-      className: cn(warehouseId === w.id && "bg-primary/5"),
-      cell: (p) => <span className={cn("tabular-nums", (p.byWarehouse[w.id] ?? 0) === 0 && "text-danger-ink")}>{p.byWarehouse[w.id] ?? 0}</span>,
+      className: cn(String(warehouseId) === String(w.id) && "bg-primary/5"),
+      cell: (p) => (
+        <span className={cn("tabular-nums", (p.byWarehouse[w.id] ?? 0) === 0 && "text-danger-ink")}>{p.byWarehouse[w.id] ?? 0}</span>
+      ),
     })),
     { key: "total", header: "Total", align: "right", cell: (p) => <span className="font-semibold tabular-nums text-primary">{formatNumber(p.total)}</span> },
     { key: "min_stock", header: "Min.", align: "right", cell: (p) => <span className="tabular-nums">{p.min_stock}</span> },
@@ -143,12 +241,23 @@ export default function ProductsPage() {
   const exportCsv = () =>
     downloadCsv(
       "data-barang.csv",
-      ["Kode", "Nama", "Kategori", ...warehouses.map((w) => w.name), "Total", "Batas Minimum", "Pengecekan Terakhir", "Status"],
-      filtered.map((p) => [p.code, p.name, p.category, ...warehouses.map((w) => p.byWarehouse[w.id] ?? 0), p.total, p.min_stock, fmtDate(p.lastChecked), { OK: "Tersedia", LOW: "Stok Menipis", OUT: "Stok Habis" }[p.status]])
+      ["Kode", "Nama", "Kategori", ...visibleWarehouses.map((w) => w.name), "Total", "Batas Minimum", "Pengecekan Terakhir", "Status"],
+      filtered.map((p) => [
+        p.code,
+        p.name,
+        p.category,
+        ...visibleWarehouses.map((w) => p.byWarehouse[w.id] ?? 0),
+        p.total,
+        p.min_stock,
+        fmtDate(p.lastChecked),
+        { OK: "Tersedia", LOW: "Stok Menipis", OUT: "Stok Habis" }[p.status],
+      ])
     );
 
   return (
     <>
+      <CatalogSubNav />
+
       <PageHeader
         title="Manajemen Data Barang"
         description={`Kelola katalog master produk, batas minimum stok, dan pantau ketersediaan barang di ${warehouses.length || 3} gudang.`}
@@ -165,7 +274,9 @@ export default function ProductsPage() {
       {isLoading ? (
         <LoadingState label="Memuat data barang…" />
       ) : isError ? (
-        <div className="rounded-card bg-surface shadow-card"><ErrorState message={getErrorMessage(error)} onRetry={refetch} /></div>
+        <div className="rounded-card bg-surface shadow-card">
+          <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
+        </div>
       ) : (
         <>
           <div className="grid gap-5 md:grid-cols-3">
@@ -180,36 +291,179 @@ export default function ProductsPage() {
             />
             <StatCard
               label="Status Menipis & Habis"
-              value={<>{stats.low} <span className="text-base font-semibold text-warning-ink">Menipis</span> <span className="text-ink-muted">•</span> {stats.out} <span className="text-base font-semibold text-danger-ink">Habis</span></>}
+              value={
+                <>
+                  {stats.low} <span className="text-base font-semibold text-warning-ink">Menipis</span>{" "}
+                  <span className="text-ink-muted">•</span> {stats.out} <span className="text-base font-semibold text-danger-ink">Habis</span>
+                </>
+              }
               icon={Package}
               tone="warning"
               footer={<span className="text-xs font-medium text-warning-ink">Segera buat pengajuan restock</span>}
             />
           </div>
 
-          <section className="mt-5 rounded-card bg-surface p-6 shadow-card">
-            <div className="mb-5 flex flex-wrap items-center gap-2">
+          <div className="mt-5 mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card bg-surface p-3 shadow-card">
+            <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Filter gudang">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={warehouseId === "all"}
+                onClick={() => {
+                  setWarehouseId("all");
+                  setPage(1);
+                }}
+                className={cn(
+                  "inline-flex h-10 items-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors",
+                  warehouseId === "all" ? "bg-primary text-white" : "text-ink-muted hover:bg-canvas hover:text-ink"
+                )}
+              >
+                <span>Semua Gudang</span>
+                <span
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+                    warehouseId === "all" ? "bg-white/20 text-white" : "bg-canvas text-ink-muted"
+                  )}
+                >
+                  {warehouseCounts.all}
+                </span>
+              </button>
+
+              {warehouses.map((w) => {
+                const active = String(warehouseId) === String(w.id);
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => {
+                      setWarehouseId(w.id);
+                      setPage(1);
+                    }}
+                    className={cn(
+                      "inline-flex h-10 items-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors",
+                      active ? "bg-primary text-white" : "text-ink-muted hover:bg-canvas hover:text-ink"
+                    )}
+                  >
+                    <span>{w.name}</span>
+                    <span
+                      className={cn(
+                        "rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+                        active ? "bg-white/20 text-white" : "bg-canvas text-ink-muted"
+                      )}
+                    >
+                      {warehouseCounts[w.id] ?? 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <Button variant="secondary" onClick={exportCsv} disabled={!filtered.length} className="h-10">
+              <Download className="size-4" aria-hidden="true" /> Ekspor CSV
+            </Button>
+          </div>
+
+          <section className="rounded-card bg-surface p-6 shadow-card">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
               <div className="relative min-w-56 flex-1">
-                <label htmlFor="cari-barang" className="sr-only">Cari nama barang atau kode</label>
+                <label htmlFor="cari-barang" className="sr-only">
+                  Cari nama barang atau kode
+                </label>
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
-                <input id="cari-barang" value={query} onChange={resetPage(setQuery)} placeholder="Cari nama barang atau kode…" className="h-11 w-full rounded-lg border border-line bg-canvas pl-9 pr-3 text-sm" />
+                <input
+                  id="cari-barang"
+                  value={query}
+                  onChange={resetPage(setQuery)}
+                  placeholder="Cari nama barang atau kode…"
+                  className="h-11 w-full rounded-lg border border-line bg-canvas pl-9 pr-3 text-sm"
+                />
               </div>
-              <Select label="Filter kategori" hideLabel value={category} onChange={resetPage(setCategory)} options={[{ value: "all", label: "Semua kategori" }, ...categories.map((c) => ({ value: c, label: c }))]} className="w-44" selectClassName="bg-canvas" />
+              <Select
+                label="Filter kategori"
+                hideLabel
+                value={category}
+                onChange={resetPage(setCategory)}
+                options={[{ value: "all", label: "Semua kategori" }, ...categories.map((c) => ({ value: c, label: c }))]}
+                className="w-44"
+                selectClassName="bg-canvas"
+              />
               <Select
                 label="Filter status"
                 hideLabel
                 value={status}
                 onChange={resetPage(setStatus)}
-                options={[{ value: "all", label: "Semua status" }, { value: "OK", label: "Tersedia" }, { value: "LOW", label: "Stok Menipis" }, { value: "OUT", label: "Stok Habis" }]}
+                options={[
+                  { value: "all", label: "Semua status" },
+                  { value: "OK", label: "Tersedia" },
+                  { value: "LOW", label: "Stok Menipis" },
+                  { value: "OUT", label: "Stok Habis" },
+                ]}
                 className="w-40"
                 selectClassName="bg-canvas"
               />
-              <Button variant="ghost" onClick={exportCsv} disabled={!filtered.length} className="text-primary">
-                <Download className="size-4" aria-hidden="true" /> Ekspor CSV
-              </Button>
             </div>
+
+            {hasActiveFilter && (
+              <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold uppercase tracking-wider text-ink-muted">FILTER AKTIF:</span>
+                {selectedWarehouse && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary">
+                    Gudang: {selectedWarehouse.name}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWarehouseId("all");
+                        setPage(1);
+                      }}
+                      aria-label="Hapus filter gudang"
+                      className="hover:text-ink"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {category !== "all" && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-canvas px-3 py-1 font-medium text-ink">
+                    Kategori: {category}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCategory("all");
+                        setPage(1);
+                      }}
+                      aria-label="Hapus filter kategori"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {status !== "all" && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-canvas px-3 py-1 font-medium text-ink">
+                    Status: {status}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatus("all");
+                        setPage(1);
+                      }}
+                      aria-label="Hapus filter status"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                <button type="button" onClick={resetAllFilters} className="ml-1 font-medium text-primary underline hover:no-underline">
+                  Reset filter
+                </button>
+              </div>
+            )}
+
             {warehouseId !== "all" && (
-              <p className="mb-3 text-[13px] text-ink-muted">Menampilkan barang yang tersedia di gudang terpilih (kolom gudang disorot). Total dan status tetap dihitung dari semua gudang.</p>
+              <p className="mb-3 text-[13px] text-ink-muted">
+                Menampilkan barang yang tersedia di gudang terpilih saja; kolom gudang lain disembunyikan. Total dan status tetap dihitung dari semua gudang.
+              </p>
             )}
 
             <DataTable
@@ -220,7 +474,12 @@ export default function ProductsPage() {
               emptyTitle="Tidak ada barang yang cocok"
               emptyDescription="Ubah kata kunci atau filter, atau tambahkan barang baru ke katalog."
             />
-            <Pagination page={safePage} pageCount={pageCount} onChange={(p) => setPage(Math.min(Math.max(1, p), pageCount))} summary={`Menampilkan ${from} - ${to} dari ${filtered.length} barang`} />
+            <Pagination
+              page={safePage}
+              pageCount={pageCount}
+              onChange={(p) => setPage(Math.min(Math.max(1, p), pageCount))}
+              summary={`Menampilkan ${from} - ${to} dari ${filtered.length} barang`}
+            />
           </section>
         </>
       )}

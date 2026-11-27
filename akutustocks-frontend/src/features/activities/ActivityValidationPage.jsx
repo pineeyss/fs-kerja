@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowDownToLine, ArrowLeftRight, ArrowRight, ArrowUpFromLine, CheckCircle2, ClipboardCheck, Clock, Download, Funnel, Hourglass, Package, RefreshCw, Search, SlidersHorizontal, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, ClipboardCheck, Clock, Download, Funnel, Hourglass, Package, RefreshCw, Search, XCircle } from "lucide-react";
 import StatusBadge from "@/components/common/StatusBadge";
 import DataTable from "@/components/common/DataTable";
 import Pagination from "@/components/common/Pagination";
@@ -23,6 +23,10 @@ const PAGE_SIZE = 6;
 const TYPE_FILTER = { IN: "Barang Masuk", OUT: "Barang Keluar", TRANSFER: "Perpindahan", PHYSICAL_COUNT: "Stok Fisik", ADJUSTMENT: "Penyesuaian" };
 const fmtDay = (iso) => new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso));
 const fmtTime = (iso) => new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const signedDiff = (before, after) => {
+  const diff = after - before;
+  return diff > 0 ? `+${diff}` : String(diff);
+};
 
 /** Perubahan bersih per aktivitas (perpindahan = jumlah yang dipindah). */
 function change(c) {
@@ -120,6 +124,7 @@ function DetailDrawer({ commit, onClose, onDecide }) {
 
           {c.items.map((it, i) => {
             const d = it.qty_after - it.qty_before;
+            const isPhysical = it.activity_type === "PHYSICAL_COUNT";
             return (
               <section key={it.id} aria-labelledby={`item-${i}`} className="space-y-3">
                 <h3 id={`item-${i}`} className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{c.items.length > 1 ? `Identitas produk & aktivitas (${i + 1}/${c.items.length})` : "Identitas produk & aktivitas"}</h3>
@@ -134,8 +139,14 @@ function DetailDrawer({ commit, onClose, onDecide }) {
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center" role="group" aria-label="Komparasi stok">
                   <div className="rounded-lg border border-line p-3"><p className="text-xs text-ink-muted">Stok sebelum</p><p className="font-display text-xl font-semibold tabular-nums">{it.qty_before}</p></div>
-                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3"><p className="text-xs text-primary">{it.activity_type === "PHYSICAL_COUNT" ? "Selisih hitung" : "Perubahan"}</p><p className="font-display text-xl font-semibold tabular-nums text-primary">{deltaText(it.qty_before, it.qty_after)}</p></div>
-                  <div className="rounded-lg border border-line p-3"><p className="text-xs text-ink-muted">{it.activity_type === "PHYSICAL_COUNT" ? "Hasil hitung" : "Stok sesudah"}</p><p className={cn("font-display text-xl font-semibold tabular-nums", d < 0 ? "text-danger-ink" : "text-success-ink")}>{it.qty_after}</p></div>
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <p className="text-xs text-primary">{isPhysical ? "Selisih hitung" : "Perubahan"}</p>
+                    <p className="font-display text-xl font-semibold tabular-nums text-primary">{isPhysical ? signedDiff(it.qty_before, it.qty_after) : deltaText(it.qty_before, it.qty_after)}</p>
+                  </div>
+                  <div className="rounded-lg border border-line p-3">
+                    <p className="text-xs text-ink-muted">{isPhysical ? "Hasil hitung" : "Stok sesudah"}</p>
+                    <p className={cn("font-display text-xl font-semibold tabular-nums", d < 0 ? "text-danger-ink" : "text-success-ink")}>{it.qty_after}</p>
+                  </div>
                 </div>
                 {it.reason && <p className="rounded-lg bg-canvas p-3 text-sm"><span className="text-xs text-ink-muted">Alasan / catatan</span><br />{it.reason}</p>}
               </section>
@@ -180,7 +191,6 @@ export default function ActivityValidationPage() {
   const meta = list.data?.meta;
   const rows = list.data?.data ?? [];
 
-  // jaga panel detail tetap segar setelah keputusan
   const done = () => { setDecision(null); setDetail(null); ["activities", "notifications", "history"].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); };
 
   const exportCsv = async () => {
@@ -228,6 +238,15 @@ export default function ActivityValidationPage() {
         <StatusBadge tone="warning" className="ml-auto">Data contoh</StatusBadge>
       </div>
 
+      {/* 1. 4 Kartu ringkasan di atas */}
+      <div className="mb-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Total laporan" value={total ?? "—"} caption="Seluruh aktivitas Staff yang tercatat" Icon={ClipboardCheck} tone="bg-primary/10 text-primary" />
+        <Stat label="Menunggu pemeriksaan" value={pending ?? "—"} caption="Status Diajukan (wajib diperiksa SPV)" Icon={Hourglass} tone="bg-warning/25 text-warning-ink" highlight />
+        <Stat label="Diterima" value={accepted ?? "—"} caption={`${pct(accepted)} dari laporan yang sudah diputuskan`} Icon={CheckCircle2} tone="bg-success/12 text-success-ink" />
+        <Stat label="Ditolak" value={rejected ?? "—"} caption={`${pct(rejected)} memerlukan penyesuaian Staff`} Icon={XCircle} tone="bg-danger/12 text-danger-ink" />
+      </div>
+
+      {/* 2. Pencarian & filter lanjutan tepat di atas daftar laporan */}
       <section className="mb-5 rounded-card bg-surface p-5 shadow-card" aria-label="Pencarian dan filter lanjutan">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide"><Funnel className="size-4 text-primary" aria-hidden="true" /> Pencarian & filter lanjutan</h2>
@@ -247,13 +266,7 @@ export default function ActivityValidationPage() {
         </div>
       </section>
 
-      <div className="mb-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Total laporan" value={total ?? "—"} caption="Seluruh aktivitas Staff yang tercatat" Icon={ClipboardCheck} tone="bg-primary/10 text-primary" />
-        <Stat label="Menunggu pemeriksaan" value={pending ?? "—"} caption="Status Diajukan (wajib diperiksa SPV)" Icon={Hourglass} tone="bg-warning/25 text-warning-ink" highlight />
-        <Stat label="Diterima" value={accepted ?? "—"} caption={`${pct(accepted)} dari laporan yang sudah diputuskan`} Icon={CheckCircle2} tone="bg-success/12 text-success-ink" />
-        <Stat label="Ditolak" value={rejected ?? "—"} caption={`${pct(rejected)} memerlukan penyesuaian Staff`} Icon={XCircle} tone="bg-danger/12 text-danger-ink" />
-      </div>
-
+      {/* 3. Daftar laporan */}
       <section className="rounded-card bg-surface p-6 shadow-card">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
